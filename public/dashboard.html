@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система учета канцтоваров</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <header>
+            <h1>📚 Канцелярские товары</h1>
+            <div class="user-info">
+                <span id="userName"></span>
+                <span id="userRole"></span>
+                <button id="logoutBtn" class="btn-secondary">Выйти</button>
+            </div>
+        </header>
+
+        <nav class="nav-tabs" id="navTabs">
+            <button class="tab-btn active" data-tab="products">📦 Товары</button>
+            <button class="tab-btn" data-tab="orders">📋 Заказы</button>
+            <button class="tab-btn admin-only" data-tab="suppliers" style="display:none;">🏢 Поставщики</button>
+            <button class="tab-btn admin-only" data-tab="statistics" style="display:none;">📊 Статистика</button>
+        </nav>
+
+        <main>
+            <!-- Вкладка Товары -->
+            <div id="productsTab" class="tab-content active">
+                <div class="filters">
+                    <input type="text" id="searchProduct" placeholder="🔍 Поиск по названию/SKU/штрихкоду">
+                    <select id="filterCategory">
+                        <option value="">Все категории</option>
+                    </select>
+                    <select id="filterSupplier">
+                        <option value="">Все поставщики</option>
+                    </select>
+                    <label>
+                        <input type="checkbox" id="filterLowStock"> Только с низким остатком
+                    </label>
+                    <button id="resetFilters" class="btn-secondary">Сбросить</button>
+                    <button id="addProductBtn" class="btn-primary admin-only" style="display:none;">➕ Добавить товар</button>
+                </div>
+                
+                <div id="productsList" class="products-grid">
+                    <div class="loading">Загрузка товаров...</div>
+                </div>
+            </div>
+
+            <!-- Вкладка Заказы -->
+            <div id="ordersTab" class="tab-content">
+                <div class="filters">
+                    <select id="filterOrderType">
+                        <option value="">Все типы</option>
+                        <option value="incoming">📥 Приход</option>
+                        <option value="outgoing">📤 Расход</option>
+                    </select>
+                    <select id="filterOrderStatus">
+                        <option value="">Все статусы</option>
+                        <option value="pending">Ожидает</option>
+                        <option value="processing">В обработке</option>
+                        <option value="completed">Завершен</option>
+                        <option value="cancelled">Отменен</option>
+                    </select>
+                    <button id="refreshOrdersBtn" class="btn-secondary">🔄 Обновить</button>
+                </div>
+                <div id="ordersList" class="orders-table-container">
+                    <div class="loading">Загрузка заказов...</div>
+                </div>
+            </div>
+
+            <!-- Вкладка Поставщики (только для админа) -->
+            <div id="suppliersTab" class="tab-content">
+                <button id="addSupplierBtn" class="btn-primary">➕ Добавить поставщика</button>
+                <div id="suppliersList" class="suppliers-grid">
+                    <div class="loading">Загрузка поставщиков...</div>
+                </div>
+            </div>
+
+            <!-- Вкладка Статистика (только для админа) -->
+            <div id="statisticsTab" class="tab-content">
+                <div id="statsContainer" class="stats-container">
+                    <div class="loading">Загрузка статистики...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Модальное окно для товара -->
+    <div id="productModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2 id="modalTitle">Добавить товар</h2>
+            <form id="productForm">
+                <input type="hidden" id="productId">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>SKU</label>
+                        <input type="text" id="sku" placeholder="Автоматически">
+                    </div>
+                    <div class="form-group">
+                        <label>Название *</label>
+                        <input type="text" id="name" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Категория</label>
+                        <select id="category_id"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Поставщик</label>
+                        <select id="supplier_id"></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Цена закупки</label>
+                        <input type="number" id="purchase_price" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>Розничная цена *</label>
+                        <input type="number" id="retail_price" step="0.01" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество *</label>
+                        <input type="number" id="quantity" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Мин. остаток</label>
+                        <input type="number" id="min_quantity" value="10">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Штрихкод</label>
+                        <input type="text" id="barcode">
+                    </div>
+                    <div class="form-group">
+                        <label>Место хранения</label>
+                        <input type="text" id="location_in_store">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Описание</label>
+                    <textarea id="description" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                    <button type="button" class="btn-secondary" onclick="closeModal()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно для поставщика -->
+    <div id="supplierModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSupplierModal()">&times;</span>
+            <h2>Добавить поставщика</h2>
+            <form id="supplierForm">
+                <div class="form-group">
+                    <label>Название компании *</label>
+                    <input type="text" id="supplierName" required>
+                </div>
+                <div class="form-group">
+                    <label>Контактное лицо</label>
+                    <input type="text" id="contactPerson">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="supplierEmail">
+                    </div>
+                    <div class="form-group">
+                        <label>Телефон *</label>
+                        <input type="tel" id="supplierPhone" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Адрес</label>
+                    <textarea id="supplierAddress" rows="2"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>ИНН</label>
+                        <input type="text" id="supplierInn">
+                    </div>
+                    <div class="form-group">
+                        <label>Условия оплаты</label>
+                        <input type="text" id="paymentTerms">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                    <button type="button" class="btn-secondary" onclick="closeSupplierModal()">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

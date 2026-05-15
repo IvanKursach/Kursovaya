@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройка системы</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .role-selector {
+            display: flex;
+            gap: 20px;
+            margin: 15px 0;
+        }
+        .role-selector label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: normal;
+        }
+        .role-selector input[type="radio"] {
+            width: auto;
+            margin: 0;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        .message {
+            margin-top: 15px;
+            text-align: center;
+        }
+        hr {
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>🔐 Создание пользователя</h2>
+        
+        <form id="setupForm">
+            <div class="form-group">
+                <label>Секретный ключ</label>
+                <input type="password" id="secretKey" placeholder="SESSION_SECRET из .env" required>
+            </div>
+            
+            <hr>
+            
+            <div class="role-selector">
+                <label>
+                    <input type="radio" name="role" value="admin" checked> 
+                    👑 Администратор
+                </label>
+                <label>
+                    <input type="radio" name="role" value="employee"> 
+                    👤 Сотрудник
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label>Логин</label>
+                <input type="text" id="username" placeholder="Например: admin" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Пароль</label>
+                <input type="password" id="password" placeholder="Не менее 4 символов" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Полное имя</label>
+                <input type="text" id="fullName" placeholder="Иванов Иван Иванович" required>
+            </div>
+            
+            <button type="submit">Создать пользователя</button>
+            <div id="message" class="message"></div>
+        </form>
+        
+        <p style="margin-top: 20px; text-align: center; font-size: 14px; color: #666;">
+            После создания перейдите на <a href="/">главную</a>
+        </p>
+    </div>
+    
+    <script>
+        document.getElementById('setupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const messageDiv = document.getElementById('message');
+            const secret = document.getElementById('secretKey').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const fullName = document.getElementById('fullName').value;
+            const role = document.querySelector('input[name="role"]:checked').value;
+            
+            if (password.length < 4) {
+                messageDiv.innerHTML = '<span style="color: red;">Пароль должен быть минимум 4 символа</span>';
+                return;
+            }
+            
+            messageDiv.innerHTML = '<span style="color: #3498db;">Создание...</span>';
+            
+            try {
+                const res = await fetch('/api/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        secret: secret,
+                        username: username,
+                        password: password,
+                        full_name: fullName,
+                        role: role
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    const roleText = role === 'admin' ? 'Администратор' : 'Сотрудник';
+                    messageDiv.innerHTML = `<span style="color: green;">✅ ${roleText} создан! <a href="/">Войти</a></span>`;
+                    document.getElementById('username').value = '';
+                    document.getElementById('password').value = '';
+                    document.getElementById('fullName').value = '';
+                } else {
+                    messageDiv.innerHTML = `<span style="color: red;">❌ ${data.error}</span>`;
+                }
+            } catch (err) {
+                console.error('Ошибка:', err);
+                messageDiv.innerHTML = '<span style="color: red;">❌ Ошибка соединения</span>';
+            }
+        });
+    </script>
+</body>
+</html>
