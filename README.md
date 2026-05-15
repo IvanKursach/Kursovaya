@@ -3,6 +3,3 @@
 Просто настрой .env и запусти Dockerfile
 
 /setup - страница создания аккаунтов
-# Kursovaya
-# Kursovaya
-# Kursovaya
