@@ -153,6 +153,19 @@ async function loadProducts() {
         products.forEach(p => {
             const stockClass = p.quantity === 0 ? 'out-of-stock' : (p.quantity <= p.min_quantity ? 'low-stock' : '');
             
+            // Экранируем описание для безопасности
+            let description = '';
+            if (p.description) {
+                description = p.description
+                    .replace(/[&<>]/g, function(m) {
+                        if (m === '&') return '&amp;';
+                        if (m === '<') return '&lt;';
+                        if (m === '>') return '&gt;';
+                        return m;
+                    })
+                    .replace(/\n/g, '<br>');
+            }
+            
             html += `
                 <div class="product-card ${stockClass}">
                     <div class="product-header">
@@ -161,6 +174,7 @@ async function loadProducts() {
                     </div>
                     <h3>${p.name}</h3>
                     ${p.supplier_name ? `<p class="supplier">🏢 ${p.supplier_name}</p>` : ''}
+                    ${description ? `<div class="product-description">📝 ${description}</div>` : ''}
                     <div class="product-prices">
                         <span class="retail-price">${p.retail_price} ₽</span>
                         ${currentUser.role === 'admin' ? `<span class="purchase-price">Закуп: ${p.purchase_price} ₽</span>` : ''}
@@ -351,13 +365,9 @@ async function loadStatistics() {
             </div>
         `;
         
-        // Две колонки
         html += `<div class="stats-two-columns">`;
-        
-        // Левая колонка
         html += `<div class="stats-column">`;
         
-        // Топ товаров
         if (stats.topProducts && stats.topProducts.length > 0) {
             html += `
                 <div class="stats-section">
@@ -378,7 +388,6 @@ async function loadStatistics() {
             `;
         }
         
-        // Продажи по категориям
         if (stats.salesByCategory && stats.salesByCategory.length > 0) {
             html += `
                 <div class="stats-section">
@@ -399,12 +408,8 @@ async function loadStatistics() {
             `;
         }
         
-        html += `</div>`;
+        html += `</div><div class="stats-column">`;
         
-        // Правая колонка
-        html += `<div class="stats-column">`;
-        
-        // Низкий остаток
         if (stats.lowStock && stats.lowStock.length > 0) {
             html += `
                 <div class="stats-section warning">
@@ -425,7 +430,6 @@ async function loadStatistics() {
             `;
         }
         
-        // Последние заказы
         if (stats.recentOrders && stats.recentOrders.length > 0) {
             html += `
                 <div class="stats-section">
@@ -452,7 +456,6 @@ async function loadStatistics() {
         }
         
         html += `</div></div>`;
-        
         container.innerHTML = html;
         
     } catch (err) {
@@ -606,7 +609,7 @@ async function logout() {
     window.location.href = '/login.html';
 }
 
-// Вспомогательные функции (ЕДИНСТВЕННЫЙ ЭКЗЕМПЛЯР)
+// Вспомогательные функции
 function getStatusText(status) {
     const map = {
         'draft': 'Черновик',
