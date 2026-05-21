@@ -37,6 +37,9 @@ function setupEventListeners() {
     document.querySelectorAll('.close').forEach(closeBtn => {
         closeBtn.addEventListener('click', closeAllModals);
     });
+    
+    // Кнопка удаления фото
+    document.getElementById('removeImageBtn')?.addEventListener('click', removeProductImage);
 }
 
 async function checkAuth() {
@@ -153,7 +156,7 @@ async function loadProducts() {
         products.forEach(p => {
             const stockClass = p.quantity === 0 ? 'out-of-stock' : (p.quantity <= p.min_quantity ? 'low-stock' : '');
             
-            // Экранируем описание для безопасности
+            // Экранируем описание
             let description = '';
             if (p.description) {
                 description = p.description
@@ -168,6 +171,13 @@ async function loadProducts() {
             
             html += `
                 <div class="product-card ${stockClass}">
+                    ${p.image_url ? `
+                        <div class="product-image-container">
+                            <img src="${p.image_url}" alt="${p.name}" class="product-image" onerror="this.src='/uploads/products/placeholder.png'">
+                        </div>
+                    ` : `
+                        <div class="product-image-placeholder">📦</div>
+                    `}
                     <div class="product-header">
                         <span class="category-badge">${p.category_icon || '📦'} ${p.category_name || 'Без категории'}</span>
                         <span class="sku">SKU: ${p.sku}</span>
@@ -273,7 +283,6 @@ async function loadOrders() {
         
         html += `</tbody></table>`;
         container.innerHTML = html;
-        
     } catch (err) {
         console.error('❌ Ошибка загрузки заказов:', err);
         container.innerHTML = `<div class="error"><p>❌ Ошибка загрузки заказов</p><button onclick="loadOrders()" class="btn-secondary">🔄 Повторить</button></div>`;
@@ -457,19 +466,13 @@ async function loadStatistics() {
         
         html += `</div></div>`;
         container.innerHTML = html;
-        
     } catch (err) {
         console.error('❌ Ошибка загрузки статистики:', err);
-        container.innerHTML = `
-            <div class="error">
-                <p>❌ Ошибка загрузки статистики</p>
-                <small>${err.message}</small>
-            </div>
-        `;
+        container.innerHTML = `<div class="error"><p>❌ Ошибка загрузки статистики</p><small>${err.message}</small></div>`;
     }
 }
 
-// CRUD функции
+// CRUD функции для товаров
 function openProductModal(product = null) {
     const modal = document.getElementById('productModal');
     const title = document.getElementById('modalTitle');
@@ -488,10 +491,22 @@ function openProductModal(product = null) {
         document.getElementById('barcode').value = product.barcode || '';
         document.getElementById('location_in_store').value = product.location_in_store || '';
         document.getElementById('description').value = product.description || '';
+        
+        // Показываем текущее фото, если есть
+        if (product.image_url) {
+            const preview = document.getElementById('imagePreview');
+            const previewDiv = document.getElementById('currentImagePreview');
+            preview.src = product.image_url;
+            previewDiv.style.display = 'block';
+        } else {
+            document.getElementById('currentImagePreview').style.display = 'none';
+        }
     } else {
         title.textContent = 'Добавить товар';
         document.getElementById('productForm').reset();
         document.getElementById('productId').value = '';
+        document.getElementById('currentImagePreview').style.display = 'none';
+        document.getElementById('productImage').value = '';
     }
     
     modal.style.display = 'block';
@@ -514,6 +529,51 @@ async function deleteProduct(id) {
         loadProducts();
     } catch (err) {
         alert('Ошибка удаления');
+    }
+}
+
+async function uploadProductImage(productId, file) {
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    try {
+        const res = await fetch(`/api/products/${productId}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            return data.image_url;
+        } else {
+            throw new Error('Ошибка загрузки');
+        }
+    } catch (err) {
+        alert('Не удалось загрузить фото');
+        return null;
+    }
+}
+
+async function removeProductImage() {
+    const productId = document.getElementById('productId').value;
+    if (!productId) return;
+    
+    if (!confirm('Удалить фото товара?')) return;
+    
+    try {
+        const res = await fetch(`/api/products/${productId}/image`, {
+            method: 'DELETE'
+        });
+        
+        if (res.ok) {
+            document.getElementById('currentImagePreview').style.display = 'none';
+            document.getElementById('imagePreview').src = '';
+            alert('Фото удалено');
+        } else {
+            throw new Error('Ошибка удаления');
+        }
+    } catch (err) {
+        alert('Ошибка удаления фото');
     }
 }
 
@@ -547,6 +607,14 @@ async function saveProduct(e) {
         });
         
         if (res.ok) {
+            const savedProduct = await res.json();
+            
+            // Если есть файл фото, загружаем
+            const imageFile = document.getElementById('productImage').files[0];
+            if (imageFile && savedProduct.id) {
+                await uploadProductImage(savedProduct.id, imageFile);
+            }
+            
             closeAllModals();
             loadProducts();
         } else {
@@ -558,6 +626,7 @@ async function saveProduct(e) {
     }
 }
 
+// CRUD для поставщиков
 function openSupplierModal() {
     document.getElementById('supplierModal').style.display = 'block';
 }
@@ -602,6 +671,7 @@ function resetFilters() {
 
 function closeAllModals() {
     document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+    document.getElementById('productImage').value = '';
 }
 
 async function logout() {

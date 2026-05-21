@@ -3,6 +3,8 @@ const session = require('express-session');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
 require('dotenv').config();
 
 const dbModule = require('./db');
@@ -22,6 +24,42 @@ app.use(session({
     saveUninitialized: false,
     cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 }
 }));
+
+// Создаем папку для загрузок, если её нет
+const uploadDir = path.join(__dirname, 'public', 'uploads', 'products');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Настройка multer для сохранения файлов
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, 'product-' + uniqueSuffix + ext);
+    }
+});
+
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+        return cb(null, true);
+    } else {
+        cb(new Error('Только изображения!'));
+    }
+};
+
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: fileFilter
+});
 
 // Инициализация БД перед запуском сервера
 dbModule.initDatabase().then(() => {
@@ -51,19 +89,14 @@ app.get('/setup', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
-// ============ API НАСТРОЙКА (СОЗДАНИЕ АДМИНА) ============
+// ============ API НАСТРОЙКА ============
 app.post('/api/setup', async (req, res) => {
-    console.log('📥 Запрос на создание пользователя');
-    
     const { secret, username, password, full_name, role } = req.body;
     
-    // Проверка секретного ключа
     if (secret !== process.env.SESSION_SECRET) {
-        console.log('❌ Неверный секретный ключ');
         return res.status(403).json({ error: 'Неверный секретный ключ' });
     }
     
-    // Проверка обязательных полей
     if (!username || !password || !full_name) {
         return res.status(400).json({ error: 'Логин, пароль и имя обязательны' });
     }
@@ -74,29 +107,19 @@ app.post('/api/setup', async (req, res) => {
     
     try {
         const pool = getPool();
-        
-        // Проверяем, существует ли пользователь
         const [existing] = await pool.query('SELECT id FROM users WHERE username = ?', [username]);
         if (existing.length > 0) {
             return res.status(400).json({ error: 'Пользователь с таким логином уже существует' });
         }
         
-        // Хешируем пароль
         const hashedPassword = await bcrypt.hash(password, 10);
-        
-        // Создаем пользователя
         await pool.query(
             `INSERT INTO users (username, password, role, full_name, is_active) 
              VALUES (?, ?, ?, ?, TRUE)`,
             [username, hashedPassword, role || 'admin', full_name]
         );
         
-        console.log(`✅ Пользователь ${username} (${role || 'admin'}) создан`);
-        res.json({ 
-            success: true, 
-            message: `Пользователь ${username} успешно создан` 
-        });
-        
+        res.json({ success: true, message: `Пользователь ${username} успешно создан` });
     } catch (err) {
         console.error('❌ Ошибка создания пользователя:', err);
         res.status(500).json({ error: 'Ошибка сервера: ' + err.message });
@@ -137,13 +160,8 @@ app.post('/api/login', async (req, res) => {
             role: user.role,
             full_name: user.full_name
         };
-
-        console.log(`✅ Вход: ${user.username} (${user.role})`);
         
-        res.json({ 
-            success: true, 
-            user: req.session.user
-        });
+        res.json({ success: true, user: req.session.user });
     } catch (err) {
         console.error('❌ Ошибка при логине:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
@@ -160,6 +178,56 @@ app.get('/api/me', (req, res) => {
         return res.status(401).json({ error: 'Требуется авторизация' });
     }
     res.json(req.session.user);
+});
+
+// ============ API ДЛЯ ФОТО ТОВАРОВ ============
+app.post('/api/products/:id/upload', requireAdmin, upload.single('image'), async (req, res) => {
+    try {
+        const productId = req.params.id;
+        
+        if (!req.file) {
+            return res.status(400).json({ error: 'Файл не загружен' });
+        }
+        
+        const imageUrl = `/uploads/products/${req.file.filename}`;
+        
+        const pool = getPool();
+        await pool.query(
+            'UPDATE products SET image_url = ? WHERE id = ?',
+            [imageUrl, productId]
+        );
+        
+        res.json({ success: true, image_url: imageUrl });
+    } catch (err) {
+        console.error('Ошибка загрузки фото:', err);
+        res.status(500).json({ error: 'Ошибка загрузки фото' });
+    }
+});
+
+app.delete('/api/products/:id/image', requireAdmin, async (req, res) => {
+    try {
+        const pool = getPool();
+        const [product] = await pool.query(
+            'SELECT image_url FROM products WHERE id = ?',
+            [req.params.id]
+        );
+        
+        if (product[0]?.image_url) {
+            const filePath = path.join(__dirname, 'public', product[0].image_url);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            await pool.query(
+                'UPDATE products SET image_url = NULL WHERE id = ?',
+                [req.params.id]
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка удаления фото:', err);
+        res.status(500).json({ error: 'Ошибка удаления фото' });
+    }
 });
 
 // ============ API КАТЕГОРИИ ============
@@ -197,13 +265,14 @@ app.get('/api/suppliers', requireAuth, async (req, res) => {
 // ============ API ТОВАРЫ ============
 app.get('/api/products', requireAuth, async (req, res) => {
     try {
-        const { search } = req.query;
+        const { search, category, supplier, low_stock } = req.query;
         const pool = getPool();
         
         let query = `
             SELECT 
                 p.*,
                 c.name as category_name,
+                c.icon as category_icon,
                 s.company_name as supplier_name
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
@@ -213,9 +282,23 @@ app.get('/api/products', requireAuth, async (req, res) => {
         const params = [];
         
         if (search) {
-            query += ' AND (p.name LIKE ? OR p.sku LIKE ?)';
+            query += ' AND (p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ?)';
             const searchPattern = `%${search}%`;
-            params.push(searchPattern, searchPattern);
+            params.push(searchPattern, searchPattern, searchPattern);
+        }
+        
+        if (category) {
+            query += ' AND p.category_id = ?';
+            params.push(category);
+        }
+        
+        if (supplier) {
+            query += ' AND p.supplier_id = ?';
+            params.push(supplier);
+        }
+        
+        if (low_stock === 'true') {
+            query += ' AND p.quantity <= p.min_quantity';
         }
         
         query += ' ORDER BY p.name';
@@ -311,7 +394,7 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
                 barcode = ?, location_in_store = ?, is_active = ?
             WHERE id = ?`,
             [name, category_id, supplier_id, description, purchase_price, retail_price,
-             quantity, min_quantity, barcode, location_in_store, is_active, id]
+             quantity, min_quantity, barcode, location_in_store, is_active || true, id]
         );
         
         const [updated] = await pool.query(`
@@ -338,6 +421,16 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
 app.delete('/api/products/:id', requireAdmin, async (req, res) => {
     try {
         const pool = getPool();
+        
+        // Удаляем фото товара, если есть
+        const [product] = await pool.query('SELECT image_url FROM products WHERE id = ?', [req.params.id]);
+        if (product[0]?.image_url) {
+            const filePath = path.join(__dirname, 'public', product[0].image_url);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        }
+        
         await pool.query('UPDATE products SET is_active = FALSE WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
@@ -375,11 +468,7 @@ app.get('/api/orders', requireAuth, async (req, res) => {
         
         query += ' ORDER BY o.order_date DESC LIMIT 100';
         
-        console.log('📦 Запрос заказов:', { type, status });
-        
         const [orders] = await pool.query(query, params);
-        console.log(`✅ Найдено заказов: ${orders.length}`);
-        
         res.json(orders);
     } catch (err) {
         console.error('❌ Ошибка получения заказов:', err);
@@ -387,7 +476,6 @@ app.get('/api/orders', requireAuth, async (req, res) => {
     }
 });
 
-// Получение позиций заказа
 app.get('/api/orders/:id/items', requireAuth, async (req, res) => {
     try {
         const pool = getPool();
@@ -408,12 +496,11 @@ app.get('/api/orders/:id/items', requireAuth, async (req, res) => {
     }
 });
 
-// ============ API СТАТИСТИКА (УПРОЩЕННАЯ) ============
+// ============ API СТАТИСТИКА ============
 app.get('/api/statistics', requireAdmin, async (req, res) => {
     try {
         const pool = getPool();
         
-        // 1. Общая статистика
         const [totalStats] = await pool.query(`
             SELECT 
                 (SELECT COUNT(*) FROM products WHERE is_active = TRUE) as total_products,
@@ -427,7 +514,6 @@ app.get('/api/statistics', requireAdmin, async (req, res) => {
                 (SELECT COUNT(*) FROM categories WHERE is_active = TRUE) as total_categories
         `);
         
-        // 2. Топ-5 товаров по продажам
         let topProducts = [];
         try {
             const [products] = await pool.query(`
@@ -449,7 +535,6 @@ app.get('/api/statistics', requireAdmin, async (req, res) => {
             console.warn('⚠️ Топ товаров не загружен:', err.message);
         }
         
-        // 3. Товары с низким остатком
         let lowStock = [];
         try {
             const [stock] = await pool.query(`
@@ -469,7 +554,6 @@ app.get('/api/statistics', requireAdmin, async (req, res) => {
             console.warn('⚠️ Низкий остаток не загружен:', err.message);
         }
         
-        // 4. Последние заказы
         let recentOrders = [];
         try {
             const [orders] = await pool.query(`
@@ -490,7 +574,6 @@ app.get('/api/statistics', requireAdmin, async (req, res) => {
             console.warn('⚠️ Последние заказы не загружены:', err.message);
         }
         
-        // 5. Продажи по категориям
         let salesByCategory = [];
         try {
             const [categories] = await pool.query(`
@@ -514,41 +597,14 @@ app.get('/api/statistics', requireAdmin, async (req, res) => {
         }
         
         res.json({
-            total: totalStats[0] || {
-                total_products: 0,
-                total_stock: 0,
-                total_value: 0,
-                total_cost: 0,
-                total_sales: 0,
-                total_revenue: 0,
-                total_users: 0,
-                total_suppliers: 0,
-                total_categories: 0
-            },
+            total: totalStats[0] || {},
             topProducts: topProducts || [],
             lowStock: lowStock || [],
             recentOrders: recentOrders || [],
             salesByCategory: salesByCategory || []
         });
-        
     } catch (err) {
         console.error('❌ Ошибка получения статистики:', err);
-        res.json({
-            total: {
-                total_products: 0,
-                total_stock: 0,
-                total_value: 0,
-                total_cost: 0,
-                total_sales: 0,
-                total_revenue: 0,
-                total_users: 0,
-                total_suppliers: 0,
-                total_categories: 0
-            },
-            topProducts: [],
-            lowStock: [],
-            recentOrders: [],
-            salesByCategory: []
-        });
+        res.json({ total: {}, topProducts: [], lowStock: [], recentOrders: [], salesByCategory: [] });
     }
 });

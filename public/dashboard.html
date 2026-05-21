@@ -69,7 +69,7 @@
                 </div>
             </div>
 
-            <!-- Вкладка Поставщики (только для админа) -->
+            <!-- Вкладка Поставщики -->
             <div id="suppliersTab" class="tab-content">
                 <button id="addSupplierBtn" class="btn-primary">➕ Добавить поставщика</button>
                 <div id="suppliersList" class="suppliers-grid">
@@ -77,7 +77,7 @@
                 </div>
             </div>
 
-            <!-- Вкладка Статистика (только для админа) -->
+            <!-- Вкладка Статистика -->
             <div id="statisticsTab" class="tab-content">
                 <div id="statsContainer" class="stats-container">
                     <div class="loading">Загрузка статистики...</div>
@@ -146,6 +146,15 @@
                 <div class="form-group">
                     <label>Описание</label>
                     <textarea id="description" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Фото товара</label>
+                    <div id="currentImagePreview" style="display:none; margin-bottom: 10px;">
+                        <img id="imagePreview" style="max-width: 200px; max-height: 150px; border-radius: 8px;">
+                        <button type="button" id="removeImageBtn" class="btn-icon" style="margin-top: 5px;">🗑️ Удалить фото</button>
+                    </div>
+                    <input type="file" id="productImage" accept="image/*" style="padding: 8px;">
+                    <small style="color: #666;">Поддерживаются JPG, PNG, GIF, WEBP (макс. 5MB)</small>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Сохранить</button>
